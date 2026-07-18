@@ -1,9 +1,22 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware # Add this import
+from pydantic import BaseModel
+import uvicorn
 import torch
 import torch.nn as nn
 import networkx as nx
-from fastapi import FastAPI
-from pydantic import BaseModel
-import uvicorn
+
+app = FastAPI(title="Wildfire Risk & Routing Engine")
+
+# Add the CORS middleware to allow React to talk to FastAPI
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"], # In production, you'd restrict this to your exact frontend URL
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 # 1. Recreate the Neural Network Class for weight mapping
 class TunedWildfirePredictor(nn.Module):
@@ -23,9 +36,6 @@ class TunedWildfirePredictor(nn.Module):
         x = self.relu2(self.dropout2(self.layer2(x)))
         x = self.sigmoid(self.output_layer(x))
         return x
-
-# 2. Initialize FastAPI & Global Assets
-app = FastAPI(title="Wildfire Risk & Routing Engine")
 
 # IMPORTANT: Ensure this matches the exact number of columns in your X_train dataset!
 # I am using 3 here to match the payload below, but adjust if your dataset had more features.
