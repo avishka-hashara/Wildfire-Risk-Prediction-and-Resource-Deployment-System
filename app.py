@@ -7,6 +7,8 @@ import torch.nn as nn
 import networkx as nx
 import joblib
 import numpy as np
+import skfuzzy as fuzz
+from skfuzzy import control as ctrl
 
 # ---------------------------------------------------------
 # 1. API Configuration & CORS
@@ -24,30 +26,30 @@ app.add_middleware(
 INPUT_FEATURES = 10 
 
 # ---------------------------------------------------------
-# 2. Machine Learning Pipeline Setup
+# 2. Machine Learning Pipeline Setup (PyTorch & Scaler)
 # ---------------------------------------------------------
 print("Loading Scaler and PyTorch model into memory...")
-# Load the scaler exported from your Jupyter Notebook
 scaler = joblib.load('wildfire_scaler.pkl')
 
 class TunedWildfirePredictor(nn.Module):
     def __init__(self, input_size, hidden1, hidden2, dropout_rate):
         super(TunedWildfirePredictor, self).__init__()
+        
         self.layer1 = nn.Linear(input_size, hidden1)
+        self.dropout1 = nn.Dropout(dropout_rate) 
         self.relu1 = nn.ReLU()
-        self.dropout1 = nn.Dropout(dropout_rate)
+        
         self.layer2 = nn.Linear(hidden1, hidden2)
-        self.relu2 = nn.ReLU()
         self.dropout2 = nn.Dropout(dropout_rate)
-        self.output = nn.Linear(hidden2, 1)
+        self.relu2 = nn.ReLU()
+        
+        self.output_layer = nn.Linear(hidden2, 1)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
-        x = self.relu1(self.layer1(x))
-        x = self.dropout1(x)
-        x = self.relu2(self.layer2(x))
-        x = self.dropout2(x)
-        x = self.sigmoid(self.output(x))
+        x = self.relu1(self.dropout1(self.layer1(x)))
+        x = self.relu2(self.dropout2(self.layer2(x)))
+        x = self.sigmoid(self.output_layer(x))
         return x
 
 # Initialize and load model weights
@@ -56,7 +58,39 @@ model.load_state_dict(torch.load('wildfire_production_model.pth', weights_only=T
 model.eval()
 
 # ---------------------------------------------------------
-# 3. Logistics & Graph Routing Setup
+# 3. Fuzzy Logic Expert System Setup
+# ---------------------------------------------------------
+print("Initializing Fuzzy Logic Engine...")
+nn_prob = ctrl.Antecedent(np.arange(0, 1.01, 0.01), 'nn_probability')
+wind = ctrl.Antecedent(np.arange(0, 45, 1), 'wind_speed')
+risk_level = ctrl.Consequent(np.arange(0, 101, 1), 'risk_level')
+
+nn_prob['low'] = fuzz.trimf(nn_prob.universe, [0, 0, 0.5])
+nn_prob['medium'] = fuzz.trimf(nn_prob.universe, [0.25, 0.5, 0.75])
+nn_prob['high'] = fuzz.trimf(nn_prob.universe, [0.5, 1.0, 1.0])
+
+wind['calm'] = fuzz.trimf(wind.universe, [0, 0, 15])
+wind['moderate'] = fuzz.trimf(wind.universe, [10, 20, 30])
+wind['strong'] = fuzz.trimf(wind.universe, [25, 45, 45])
+
+risk_level['safe'] = fuzz.trimf(risk_level.universe, [0, 0, 30])
+risk_level['watch'] = fuzz.trimf(risk_level.universe, [20, 40, 60])
+risk_level['alert'] = fuzz.trimf(risk_level.universe, [50, 75, 90])
+risk_level['evacuate'] = fuzz.trimf(risk_level.universe, [80, 100, 100])
+
+rule1 = ctrl.Rule(nn_prob['high'] & wind['strong'], risk_level['evacuate'])
+rule2 = ctrl.Rule(nn_prob['high'] & wind['moderate'], risk_level['alert'])
+rule3 = ctrl.Rule(nn_prob['high'] & wind['calm'], risk_level['watch'])
+rule4 = ctrl.Rule(nn_prob['medium'] & wind['strong'], risk_level['alert'])
+rule5 = ctrl.Rule(nn_prob['medium'] & wind['moderate'], risk_level['watch'])
+rule6 = ctrl.Rule(nn_prob['medium'] & wind['calm'], risk_level['safe'])
+rule7 = ctrl.Rule(nn_prob['low'] & wind['strong'], risk_level['watch'])
+rule8 = ctrl.Rule(nn_prob['low'] & (wind['moderate'] | wind['calm']), risk_level['safe'])
+
+risk_ctrl = ctrl.ControlSystem([rule1, rule2, rule3, rule4, rule5, rule6, rule7, rule8])
+
+# ---------------------------------------------------------
+# 4. Logistics & Graph Routing Setup
 # ---------------------------------------------------------
 print("Constructing routing map...")
 city_map = nx.Graph()
@@ -71,7 +105,7 @@ city_map.add_edge('Fire Station Alpha', 'Downtown', weight=15)
 city_map.add_edge('Downtown', 'Active Fire Zone', weight=20) 
 
 # ---------------------------------------------------------
-# 4. Data Schemas
+# 5. Data Schemas
 # ---------------------------------------------------------
 class EnvironmentalPayload(BaseModel):
     Temperature: float
@@ -86,7 +120,7 @@ class EnvironmentalPayload(BaseModel):
     FWI: float       
 
 # ---------------------------------------------------------
-# 5. API Endpoints
+# 6. API Endpoints
 # ---------------------------------------------------------
 @app.get("/")
 def read_root():
@@ -107,19 +141,27 @@ def evaluate_risk(data: EnvironmentalPayload):
     # Convert the scaled values to a PyTorch tensor
     input_data = torch.tensor(scaled_values, dtype=torch.float32)
     
-    # Run inference
+    # 1. Run Neural Network Inference
     with torch.no_grad():
-        risk_prob = model(input_data).item()
+        nn_prediction = model(input_data).item()
         
-    needs_evacuation = risk_prob > 0.85
+    # 2. Evaluate Fuzzy Logic Rules
+    risk_simulator = ctrl.ControlSystemSimulation(risk_ctrl)
+    risk_simulator.input['nn_probability'] = nn_prediction
+    risk_simulator.input['wind_speed'] = data.Ws
+    risk_simulator.compute()
+    
+    # 3. Calculate Final Actionable Score
+    final_risk_score = risk_simulator.output['risk_level']
+    needs_evacuation = final_risk_score >= 80
     
     response = {
-        "risk_probability_percentage": round(risk_prob * 100, 2),
-        "evacuation_required": needs_evacuation,
+        "risk_probability_percentage": round(final_risk_score, 2),
+        "evacuation_required": bool(needs_evacuation),
         "payload_received": data.model_dump()
     }
     
-    # Conditionally execute routing logic if threshold is breached
+    # 4. Conditionally execute routing logic if threshold is breached
     if needs_evacuation:
         route = nx.shortest_path(city_map, source='Fire Station Alpha', target='Active Fire Zone', weight='weight')
         travel_time = nx.shortest_path_length(city_map, source='Fire Station Alpha', target='Active Fire Zone', weight='weight')
@@ -132,7 +174,7 @@ def evaluate_risk(data: EnvironmentalPayload):
     return response
 
 # ---------------------------------------------------------
-# 6. Server Execution
+# 7. Server Execution
 # ---------------------------------------------------------
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
