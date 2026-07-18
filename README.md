@@ -86,6 +86,3 @@ npm run dev
 - **Algorithms**: NetworkX (Dijkstra's Algorithm / Graph Routing)
 - **Frontend**: React, Vite, Tailwind CSS, Axios
 - **Data**: Based on the Algerian Forest Fires Dataset
-
-## License
-MIT License
