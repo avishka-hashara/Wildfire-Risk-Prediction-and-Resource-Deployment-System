@@ -4,7 +4,7 @@ from sqlalchemy.orm import declarative_base
 
 DATABASE_URL = os.getenv(
     "DATABASE_URL", 
-    "postgresql+asyncpg://postgres:password@localhost:5432/wildfiredb"
+    "postgresql+asyncpg://postgres:12345@localhost:5432/wildfiredb"
 )
 
 engine = create_async_engine(DATABASE_URL, echo=False)
