@@ -77,7 +77,7 @@ class TunedWildfirePredictor(nn.Module):
 
 # Initialize and load model weights
 model = TunedWildfirePredictor(input_size=INPUT_FEATURES, hidden1=32, hidden2=16, dropout_rate=0.0)
-model.load_state_dict(torch.load('wildfire_production_model.pth', weights_only=True))
+model.load_state_dict(torch.load('wildfire_production_model.pth', map_location=torch.device('cpu'), weights_only=True))
 model.eval()
 
 # ---------------------------------------------------------
