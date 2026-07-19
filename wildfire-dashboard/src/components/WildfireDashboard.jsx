@@ -5,9 +5,20 @@ const WildfireDashboard = () => {
     const [targetLocation, setTargetLocation] = useState({ lat: 6.40, lng: 80.45 });
     const [riskData, setRiskData] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
+    const [locationName, setLocationName] = useState("Unknown Location");
 
     const runDiagnostic = async () => {
         setIsLoading(true);
+
+        try {
+            const geoRes = await fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${targetLocation.lat}&longitude=${targetLocation.lng}&localityLanguage=en`);
+            const geoData = await geoRes.json();
+            const locName = [geoData.locality, geoData.principalSubdivision, geoData.countryName].filter(Boolean).join(", ");
+            setLocationName(locName || "Unknown Location");
+        } catch (error) {
+            console.error("Geocoding failed:", error);
+            setLocationName("Unknown Location");
+        }
 
         // We are now sending coordinates instead of the 10 manual weather/FWI metrics
         const payload = {
@@ -85,6 +96,38 @@ const WildfireDashboard = () => {
                             </div>
                         )}
                     </div>
+
+                    {/* Environmental Telemetry Panel */}
+                    {riskData && riskData.environmental_data && (
+                        <div className="bg-[#1e293b] rounded-xl p-6 border border-gray-700 shadow-2xl">
+                            <h2 className="text-xl font-bold text-gray-200 mb-4">Live Telemetry Data</h2>
+                            
+                            <div className="mb-6 pb-4 border-b border-gray-700">
+                                <div className="text-sm text-gray-400 mb-1">Target Sector</div>
+                                <div className="text-lg font-bold text-white">{locationName}</div>
+                                <div className="text-xs text-gray-500 font-mono mt-1">Lat: {targetLocation.lat.toFixed(4)} | Lng: {targetLocation.lng.toFixed(4)}</div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="bg-[#0f172a] p-4 rounded-lg border border-gray-700">
+                                    <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">Temperature</div>
+                                    <div className="text-2xl font-bold text-orange-400">{riskData.environmental_data.Temperature} °C</div>
+                                </div>
+                                <div className="bg-[#0f172a] p-4 rounded-lg border border-gray-700">
+                                    <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">Humidity (RH)</div>
+                                    <div className="text-2xl font-bold text-blue-400">{riskData.environmental_data.RH} %</div>
+                                </div>
+                                <div className="bg-[#0f172a] p-4 rounded-lg border border-gray-700">
+                                    <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">Wind Speed</div>
+                                    <div className="text-2xl font-bold text-gray-300">{riskData.environmental_data.Ws} km/h</div>
+                                </div>
+                                <div className="bg-[#0f172a] p-4 rounded-lg border border-gray-700">
+                                    <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">Precipitation</div>
+                                    <div className="text-2xl font-bold text-cyan-400">{riskData.environmental_data.Rain} mm</div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     {/* Logistics Routing Engine (Conditionally Rendered) */}
                     {riskData?.evacuation_required && riskData?.logistics && (
