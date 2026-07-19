@@ -25,9 +25,13 @@ async def run_sentry_scan():
             print("No sectors currently tracked in the database. Sentry scan aborted.")
             return
 
+        batch_tensors = []
+        batch_coords = []
+        batch_fwi_data = []
+
         # 4. Loop through each unique coordinate pair
         for lat, lng in unique_coords:
-            print(f"Scanning sector: {lat}, {lng}...")
+            print(f"Fetching data for sector: {lat}, {lng}...")
             
             # Fetch elevation
             elevation_val = None
@@ -44,7 +48,7 @@ async def run_sentry_scan():
             except Exception as e:
                 print(f"  Warning: Elevation fetch failed for {lat}, {lng}: {e}")
 
-            # 5a. Fetch live Open-Meteo weather data via httpx
+            # Fetch live Open-Meteo weather data via httpx
             url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lng}{elevation_param}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,rain"
             try:
                 async with httpx.AsyncClient() as client:
@@ -63,7 +67,7 @@ async def run_sentry_scan():
             ws = current.get("wind_speed_10m", 28.5)
             rain = current.get("rain", 0.0)
             
-            # 5b. Query the database for the most recent previous FWI log for this specific coordinate
+            # Query the database for the most recent previous FWI log for this specific coordinate
             recent_stmt = (
                 select(TelemetryLog)
                 .where(TelemetryLog.latitude == lat)
@@ -74,7 +78,7 @@ async def run_sentry_scan():
             recent_result = await session.execute(recent_stmt)
             prev_log = recent_result.scalar_one_or_none()
             
-            # 5c. Run calculate_fwi using the previous log's metrics
+            # Run calculate_fwi using the previous log's metrics
             if prev_log and prev_log.ffmc is not None and prev_log.dmc is not None and prev_log.dc is not None:
                 fwi_results = calculate_fwi(temp, rh, ws, rain, prev_ffmc=prev_log.ffmc, prev_dmc=prev_log.dmc, prev_dc=prev_log.dc)
             else:
@@ -87,7 +91,7 @@ async def run_sentry_scan():
             bui = fwi_results["BUI"]
             fwi = fwi_results["FWI"]
 
-            # 5d. Pass the 10-feature array through the PyTorch model
+            # Convert to tensor and add to batch
             raw_values = np.array([[
                 temp, rh, ws, rain, 
                 ffmc, dmc, dc, isi, 
@@ -95,49 +99,89 @@ async def run_sentry_scan():
             ]])
             
             scaled_values = app.scaler.transform(raw_values)
-            input_data = torch.tensor(scaled_values, dtype=torch.float32)
+            input_data = torch.tensor(scaled_values, dtype=torch.float32).squeeze(0)
             
+            batch_tensors.append(input_data)
+            batch_coords.append((lat, lng))
+            batch_fwi_data.append({
+                "elevation": elevation_val,
+                "temp": temp, "rh": rh, "ws": ws, "rain": rain,
+                "ffmc": ffmc, "dmc": dmc, "dc": dc, "isi": isi, "bui": bui, "fwi": fwi
+            })
+
+        if not batch_tensors:
+            print("No valid data points fetched. Sentry scan aborted.")
+            return
+
+        # Stack into 2D tensor [batch_size, 10]
+        batch_tensor = torch.stack(batch_tensors)
+        
+        try:
+            # Move entire batch to GPU
+            batch_tensor = batch_tensor.to('cuda')
+            app.model.to('cuda')
+            
+            print(f"Running batch GPU inference on {len(batch_tensors)} sectors...")
             with torch.no_grad():
-                nn_prediction = app.model(input_data).item()
+                predictions = app.model(batch_tensor)
                 
+            # Move results back to CPU for fuzzy logic
+            predictions = predictions.cpu()
+        finally:
+            # Ensure memory is cleaned up and model returns to CPU
+            app.model.to('cpu')
+            if 'batch_tensor' in locals():
+                del batch_tensor
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            
+        new_logs = []
+        for i in range(len(batch_coords)):
+            lat, lng = batch_coords[i]
+            data = batch_fwi_data[i]
+            nn_prediction = predictions[i].item()
+            
             risk_simulator = ctrl.ControlSystemSimulation(app.risk_ctrl)
             risk_simulator.input['nn_probability'] = nn_prediction
-            risk_simulator.input['wind_speed'] = ws
+            risk_simulator.input['wind_speed'] = data["ws"]
             risk_simulator.compute()
             
             final_risk_score = risk_simulator.output['risk_level']
             needs_evacuation = final_risk_score >= 80
 
-            print(f"  Result: Threat Level {round(final_risk_score, 2)}%")
+            print(f"  Sector {lat},{lng} Result: Threat Level {round(final_risk_score, 2)}%")
 
-            # 6. The Alert Trigger
+            # Alert Trigger
             if final_risk_score > 85.0:
                 print(f"  🚨 Threat level breached 85.0%! Dispatching Telegram alert...")
                 await send_telegram_alert(lat, lng, round(final_risk_score, 2))
 
-            # 7. The Memory Update
+            # Prepare Bulk Insert
             new_log = TelemetryLog(
                 latitude=lat,
                 longitude=lng,
-                elevation=elevation_val,
-                temperature=temp,
-                humidity=rh,
-                wind_speed=ws,
-                rain=rain,
-                ffmc=ffmc,
-                dmc=dmc,
-                dc=dc,
-                isi=isi,
-                bui=bui,
-                fwi=fwi,
+                elevation=data["elevation"],
+                temperature=data["temp"],
+                humidity=data["rh"],
+                wind_speed=data["ws"],
+                rain=data["rain"],
+                ffmc=data["ffmc"],
+                dmc=data["dmc"],
+                dc=data["dc"],
+                isi=data["isi"],
+                bui=data["bui"],
+                fwi=data["fwi"],
                 risk_probability=final_risk_score,
                 evacuation_authorized=bool(needs_evacuation)
             )
-            session.add(new_log)
-            await session.commit()
+            new_logs.append(new_log)
             
-        # 8. End message
-        print(f"\nSentry Scan Complete: Monitored {len(unique_coords)} sectors.")
+        # Execute Bulk Insert
+        session.add_all(new_logs)
+        await session.commit()
+            
+        # End message
+        print(f"\nSentry Scan Complete: Processed {len(batch_coords)} sectors via GPU batch inference.")
 
 if __name__ == "__main__":
     asyncio.run(run_sentry_scan())
