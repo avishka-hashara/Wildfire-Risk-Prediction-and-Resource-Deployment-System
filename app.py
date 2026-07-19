@@ -271,7 +271,34 @@ async def evaluate_risk(data: LocationPayload, db: AsyncSession = Depends(get_db
     return response
 
 # ---------------------------------------------------------
-# 7. Server Execution
+# 7. Telemetry History API Endpoint
+# ---------------------------------------------------------
+@app.get("/api/telemetry-history")
+async def get_telemetry_history(latitude: float, longitude: float, db: AsyncSession = Depends(get_db)):
+    stmt = (
+        select(TelemetryLog)
+        .where(TelemetryLog.latitude == latitude)
+        .where(TelemetryLog.longitude == longitude)
+        .order_by(desc(TelemetryLog.timestamp))
+        .limit(15)
+    )
+    result = await db.execute(stmt)
+    logs = result.scalars().all()
+    
+    # Reverse to ensure chronological order (oldest to newest left-to-right on chart)
+    history = []
+    for log in reversed(logs):
+        history.append({
+            "timestamp": log.timestamp.isoformat(),
+            "fwi": log.fwi,
+            "dc": log.dc,
+            "risk_probability": log.risk_probability
+        })
+        
+    return history
+
+# ---------------------------------------------------------
+# 8. Server Execution
 # ---------------------------------------------------------
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
