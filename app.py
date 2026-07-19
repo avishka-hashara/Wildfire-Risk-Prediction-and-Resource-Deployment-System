@@ -1,6 +1,9 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+from models import TelemetryLog
+from database import get_db, engine, Base
 import httpx
 import uvicorn
 import torch
@@ -15,6 +18,11 @@ from skfuzzy import control as ctrl
 # 1. API Configuration & CORS
 # ---------------------------------------------------------
 app = FastAPI(title="Wildfire Risk & Routing Engine")
+
+@app.on_event("startup")
+async def startup_event():
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
 
 app.add_middleware(
     CORSMiddleware,
@@ -120,8 +128,9 @@ def read_root():
     return {"status": "online", "message": "Wildfire AI Backend is running."}
 
 @app.post("/api/evaluate-risk")
-async def evaluate_risk(data: LocationPayload):
+async def evaluate_risk(data: LocationPayload, db: AsyncSession = Depends(get_db)):
     # 1. Fetch exact elevation to prevent temperature skew in mountainous terrain
+    elevation_val = None
     elevation_param = ""
     elevation_url = f"https://api.open-meteo.com/v1/elevation?latitude={data.latitude}&longitude={data.longitude}"
     
@@ -217,6 +226,22 @@ async def evaluate_risk(data: LocationPayload):
             "optimal_route": route,
             "estimated_time_mins": travel_time
         }
+        
+    # 5. Log the assessment to PostgreSQL
+    new_log = TelemetryLog(
+        latitude=data.latitude,
+        longitude=data.longitude,
+        elevation=elevation_val,
+        temperature=temp,
+        humidity=rh,
+        wind_speed=ws,
+        rain=rain,
+        risk_probability=final_risk_score,
+        evacuation_authorized=bool(needs_evacuation)
+    )
+    db.add(new_log)
+    await db.commit()
+    await db.refresh(new_log)
         
     return response
 
