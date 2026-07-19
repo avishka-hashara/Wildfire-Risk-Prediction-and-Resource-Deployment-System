@@ -8,6 +8,7 @@ const WildfireDashboard = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [locationName, setLocationName] = useState("Unknown Location");
     const [historicalData, setHistoricalData] = useState([]);
+    const [showFWI, setShowFWI] = useState(false);
 
     const runDiagnostic = async () => {
         setIsLoading(true);
@@ -148,6 +149,45 @@ const WildfireDashboard = () => {
                                     <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">Precipitation</div>
                                     <div className="text-2xl font-bold text-cyan-400">{riskData.environmental_data.Rain} mm</div>
                                 </div>
+                            </div>
+
+                            {/* Advanced FWI Metrics Toggle */}
+                            <div className="mt-4">
+                                <button 
+                                    onClick={() => setShowFWI(!showFWI)}
+                                    className="text-sm font-bold text-gray-400 hover:text-white flex items-center gap-2 transition-colors"
+                                >
+                                    {showFWI ? 'Hide' : 'Show'} Advanced FWI Metrics {showFWI ? '▲' : '▼'}
+                                </button>
+                                
+                                {showFWI && (
+                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-4 pt-4 border-t border-gray-700">
+                                        <div className="bg-[#0f172a] p-4 rounded-lg border border-gray-700">
+                                            <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">FFMC</div>
+                                            <div className="text-xl font-bold text-purple-400">{riskData.environmental_data.FFMC}</div>
+                                        </div>
+                                        <div className="bg-[#0f172a] p-4 rounded-lg border border-gray-700">
+                                            <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">DMC</div>
+                                            <div className="text-xl font-bold text-purple-400">{riskData.environmental_data.DMC}</div>
+                                        </div>
+                                        <div className="bg-[#0f172a] p-4 rounded-lg border border-gray-700">
+                                            <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">DC</div>
+                                            <div className="text-xl font-bold text-blue-400">{riskData.environmental_data.DC}</div>
+                                        </div>
+                                        <div className="bg-[#0f172a] p-4 rounded-lg border border-gray-700">
+                                            <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">ISI</div>
+                                            <div className="text-xl font-bold text-pink-400">{riskData.environmental_data.ISI}</div>
+                                        </div>
+                                        <div className="bg-[#0f172a] p-4 rounded-lg border border-gray-700">
+                                            <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">BUI</div>
+                                            <div className="text-xl font-bold text-indigo-400">{riskData.environmental_data.BUI}</div>
+                                        </div>
+                                        <div className="bg-[#0f172a] p-4 rounded-lg border border-gray-700">
+                                            <div className="text-xs text-gray-500 uppercase tracking-wider mb-1">FWI</div>
+                                            <div className="text-xl font-bold text-orange-400">{riskData.environmental_data.FWI}</div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     )}
