@@ -1,6 +1,7 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+import httpx
 import uvicorn
 import torch
 import torch.nn as nn
@@ -107,17 +108,9 @@ city_map.add_edge('Downtown', 'Active Fire Zone', weight=20)
 # ---------------------------------------------------------
 # 5. Data Schemas
 # ---------------------------------------------------------
-class EnvironmentalPayload(BaseModel):
-    Temperature: float
-    RH: float        
-    Ws: float        
-    Rain: float
-    FFMC: float      
-    DMC: float       
-    DC: float        
-    ISI: float       
-    BUI: float       
-    FWI: float       
+class LocationPayload(BaseModel):
+    latitude: float
+    longitude: float       
 
 # ---------------------------------------------------------
 # 6. API Endpoints
@@ -127,12 +120,39 @@ def read_root():
     return {"status": "online", "message": "Wildfire AI Backend is running."}
 
 @app.post("/api/evaluate-risk")
-def evaluate_risk(data: EnvironmentalPayload):
+async def evaluate_risk(data: LocationPayload):
+    # Fetch real-time data from Open-Meteo
+    url = f"https://api.open-meteo.com/v1/forecast?latitude={data.latitude}&longitude={data.longitude}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,rain"
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(url, timeout=10.0)
+            resp.raise_for_status()
+            weather_data = resp.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to fetch environmental data: {str(e)}")
+        
+    current = weather_data.get("current", {})
+    
+    # Extract values, gracefully handling missing data with defaults
+    temp = current.get("temperature_2m", 40.5)
+    rh = current.get("relative_humidity_2m", 15.0)
+    ws = current.get("wind_speed_10m", 28.5)
+    rain = current.get("rain", 0.0)
+    
+    # FWI variables are not natively in Open-Meteo's standard forecast, gracefully fallback to defaults
+    ffmc = current.get("ffmc", 92.1)
+    dmc = current.get("dmc", 55.3)
+    dc = current.get("dc", 120.5)
+    isi = current.get("isi", 18.2)
+    bui = current.get("bui", 60.1)
+    fwi = current.get("fwi", 25.5)
+
     # Extract raw values into a 2D numpy array in the exact order the model expects
     raw_values = np.array([[
-        data.Temperature, data.RH, data.Ws, data.Rain, 
-        data.FFMC, data.DMC, data.DC, data.ISI, 
-        data.BUI, data.FWI
+        temp, rh, ws, rain, 
+        ffmc, dmc, dc, isi, 
+        bui, fwi
     ]])
     
     # Transform the raw values using the loaded scikit-learn scaler
@@ -148,7 +168,7 @@ def evaluate_risk(data: EnvironmentalPayload):
     # 2. Evaluate Fuzzy Logic Rules
     risk_simulator = ctrl.ControlSystemSimulation(risk_ctrl)
     risk_simulator.input['nn_probability'] = nn_prediction
-    risk_simulator.input['wind_speed'] = data.Ws
+    risk_simulator.input['wind_speed'] = ws
     risk_simulator.compute()
     
     # 3. Calculate Final Actionable Score
@@ -158,6 +178,18 @@ def evaluate_risk(data: EnvironmentalPayload):
     response = {
         "risk_probability_percentage": round(final_risk_score, 2),
         "evacuation_required": bool(needs_evacuation),
+        "environmental_data": {
+            "Temperature": temp,
+            "RH": rh,
+            "Ws": ws,
+            "Rain": rain,
+            "FFMC": ffmc,
+            "DMC": dmc,
+            "DC": dc,
+            "ISI": isi,
+            "BUI": bui,
+            "FWI": fwi
+        },
         "payload_received": data.model_dump()
     }
     
