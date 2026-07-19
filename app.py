@@ -3,6 +3,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
+from contextlib import asynccontextmanager
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from sentry import run_sentry_scan
 from models import TelemetryLog
 from database import get_db, engine, Base
 from fwi_calculator import calculate_fwi
@@ -19,12 +22,21 @@ from skfuzzy import control as ctrl
 # ---------------------------------------------------------
 # 1. API Configuration & CORS
 # ---------------------------------------------------------
-app = FastAPI(title="Wildfire Risk & Routing Engine")
 
-@app.on_event("startup")
-async def startup_event():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(run_sentry_scan, 'interval', hours=6)
+    scheduler.start()
+    
+    yield
+    
+    scheduler.shutdown()
+
+app = FastAPI(title="Wildfire Risk & Routing Engine", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
