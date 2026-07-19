@@ -2,6 +2,7 @@ import asyncio
 import httpx
 import torch
 import numpy as np
+import networkx as nx
 from sqlalchemy import select, desc
 from skfuzzy import control as ctrl
 
@@ -154,7 +155,9 @@ async def run_sentry_scan():
             # Alert Trigger
             if final_risk_score > 85.0:
                 print(f"  🚨 Threat level breached 85.0%! Dispatching Telegram alert...")
-                await send_telegram_alert(lat, lng, round(final_risk_score, 2))
+                route = nx.shortest_path(app.city_map, source='Fire Station Alpha', target='Active Fire Zone', weight='weight')
+                travel_time = nx.shortest_path_length(app.city_map, source='Fire Station Alpha', target='Active Fire Zone', weight='weight')
+                await send_telegram_alert(lat, lng, round(final_risk_score, 2), route=route, travel_time=travel_time)
 
             # Prepare Bulk Insert
             new_log = TelemetryLog(
