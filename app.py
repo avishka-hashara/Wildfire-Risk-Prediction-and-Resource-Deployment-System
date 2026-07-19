@@ -121,8 +121,23 @@ def read_root():
 
 @app.post("/api/evaluate-risk")
 async def evaluate_risk(data: LocationPayload):
-    # Fetch real-time data from Open-Meteo
-    url = f"https://api.open-meteo.com/v1/forecast?latitude={data.latitude}&longitude={data.longitude}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,rain"
+    # 1. Fetch exact elevation to prevent temperature skew in mountainous terrain
+    elevation_param = ""
+    elevation_url = f"https://api.open-meteo.com/v1/elevation?latitude={data.latitude}&longitude={data.longitude}"
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            elev_resp = await client.get(elevation_url, timeout=5.0)
+            elev_resp.raise_for_status()
+            elev_data = elev_resp.json()
+            if "elevation" in elev_data and len(elev_data["elevation"]) > 0:
+                elevation_val = elev_data["elevation"][0]
+                elevation_param = f"&elevation={elevation_val}"
+    except Exception as e:
+        print(f"Warning: Elevation fetch failed, falling back to default DEM: {e}")
+
+    # 2. Fetch real-time data from Open-Meteo
+    url = f"https://api.open-meteo.com/v1/forecast?latitude={data.latitude}&longitude={data.longitude}{elevation_param}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,rain"
     
     try:
         async with httpx.AsyncClient() as client:
