@@ -27,15 +27,22 @@ const WildfireDashboard = () => {
         };
 
         try {
-            const response = await fetch('http://localhost:8000/api/evaluate-risk', {
+            const response = await fetch('http://127.0.0.1:8000/api/evaluate-risk', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
+            
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.detail || 'API Error');
+            }
+            
             const data = await response.json();
             setRiskData(data);
         } catch (error) {
             console.error("Diagnostic failed:", error);
+            alert(`Diagnostic failed: ${error.message}`);
         } finally {
             setIsLoading(false);
         }
