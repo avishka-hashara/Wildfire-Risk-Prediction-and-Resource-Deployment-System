@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import TacticalMap from './TacticalMap';
+import HistoryChart from './HistoryChart';
 
 const WildfireDashboard = () => {
     const [targetLocation, setTargetLocation] = useState({ lat: 6.40, lng: 80.45 });
     const [riskData, setRiskData] = useState(null);
     const [isLoading, setIsLoading] = useState(false);
     const [locationName, setLocationName] = useState("Unknown Location");
+    const [historicalData, setHistoricalData] = useState([]);
 
     const runDiagnostic = async () => {
         setIsLoading(true);
@@ -40,6 +42,20 @@ const WildfireDashboard = () => {
             
             const data = await response.json();
             setRiskData(data);
+            
+            // Fetch historical telemetry data
+            try {
+                const historyRes = await fetch(`http://127.0.0.1:8000/api/telemetry-history?latitude=${targetLocation.lat}&longitude=${targetLocation.lng}`);
+                if (historyRes.ok) {
+                    const historyJson = await historyRes.json();
+                    setHistoricalData(historyJson);
+                } else {
+                    console.error("Failed to fetch historical data");
+                }
+            } catch (historyErr) {
+                console.error("History fetch failed:", historyErr);
+            }
+            
         } catch (error) {
             console.error("Diagnostic failed:", error);
             alert(`Diagnostic failed: ${error.message}`);
@@ -166,6 +182,19 @@ const WildfireDashboard = () => {
 
                 </div>
             </div>
+
+            {/* Sector Microclimate History Section */}
+            <div className="mt-8">
+                <h2 className="text-xl font-bold text-gray-200 mb-4">Sector Microclimate History</h2>
+                {historicalData && historicalData.length > 0 ? (
+                    <HistoryChart data={historicalData} />
+                ) : (
+                    <div className="w-full h-64 bg-[#1e293b] rounded-lg p-4 border border-gray-700 flex items-center justify-center text-gray-500 italic">
+                        No historical data available for this sector yet.
+                    </div>
+                )}
+            </div>
+
         </div>
     );
 };
