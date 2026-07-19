@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 
@@ -28,9 +28,25 @@ const LocationMarker = ({ position, setPosition }) => {
     );
 };
 
+// Component to programmatically fly map to a new position
+const MapUpdater = ({ position }) => {
+    const map = useMap();
+    useEffect(() => {
+        if (position) {
+            map.flyTo(position, map.getZoom(), {
+                animate: true,
+                duration: 1.5
+            });
+        }
+    }, [position, map]);
+    return null;
+};
+
 const TacticalMap = ({ onLocationSelect }) => {
     // Defaulting to a dense forest region (Sinharaja Forest Reserve coordinates as a good baseline)
     const [position, setPosition] = useState([6.40, 80.45]);
+    const [searchQuery, setSearchQuery] = useState("");
+    const [isSearching, setIsSearching] = useState(false);
 
     // Ensure the parent component gets the default location on initial mount
     useEffect(() => {
@@ -42,9 +58,49 @@ const TacticalMap = ({ onLocationSelect }) => {
         onLocationSelect({ lat: newPos[0], lng: newPos[1] });
     };
 
+    const handleSearch = async (e) => {
+        e.preventDefault();
+        if (!searchQuery.trim()) return;
+        
+        setIsSearching(true);
+        try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}`);
+            const data = await res.json();
+            if (data && data.length > 0) {
+                const newPos = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+                handleLocationChange(newPos);
+            } else {
+                alert("Location not found. Please try a different search term.");
+            }
+        } catch (error) {
+            console.error("Search failed:", error);
+            alert("Search failed. Please try again.");
+        } finally {
+            setIsSearching(false);
+        }
+    };
+
     return (
         <div className="w-full flex flex-col">
-            <div className="w-full h-80 rounded-t-lg overflow-hidden border border-gray-700 shadow-lg">
+            {/* Location Search Bar */}
+            <form onSubmit={handleSearch} className="flex gap-2 mb-3">
+                <input 
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search by city, region, or country..."
+                    className="flex-1 bg-[#0f172a] border border-gray-700 rounded-lg px-4 py-2 text-sm text-gray-200 focus:outline-none focus:border-red-500 transition-colors"
+                />
+                <button 
+                    type="submit" 
+                    disabled={isSearching}
+                    className="bg-red-600 hover:bg-red-700 disabled:bg-red-800 disabled:text-gray-400 text-white font-bold py-2 px-4 rounded-lg text-sm transition-colors"
+                >
+                    {isSearching ? 'SEARCHING...' : 'SEARCH'}
+                </button>
+            </form>
+
+            <div className="w-full h-80 rounded-t-lg overflow-hidden border border-gray-700 shadow-lg relative z-0">
                 <MapContainer
                     center={position}
                     zoom={9}
@@ -56,6 +112,7 @@ const TacticalMap = ({ onLocationSelect }) => {
                         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
                     />
                     <LocationMarker position={position} setPosition={handleLocationChange} />
+                    <MapUpdater position={position} />
                 </MapContainer>
             </div>
 
