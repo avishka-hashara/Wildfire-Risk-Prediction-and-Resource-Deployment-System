@@ -2,8 +2,10 @@ from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, desc
 from models import TelemetryLog
 from database import get_db, engine, Base
+from fwi_calculator import calculate_fwi
 import httpx
 import uvicorn
 import torch
@@ -164,13 +166,30 @@ async def evaluate_risk(data: LocationPayload, db: AsyncSession = Depends(get_db
     ws = current.get("wind_speed_10m", 28.5)
     rain = current.get("rain", 0.0)
     
-    # FWI variables are not natively in Open-Meteo's standard forecast, gracefully fallback to defaults
-    ffmc = current.get("ffmc", 92.1)
-    dmc = current.get("dmc", 55.3)
-    dc = current.get("dc", 120.5)
-    isi = current.get("isi", 18.2)
-    bui = current.get("bui", 60.1)
-    fwi = current.get("fwi", 25.5)
+    # Query database for the most recent log at this exact location
+    stmt = (
+        select(TelemetryLog)
+        .where(TelemetryLog.latitude == data.latitude)
+        .where(TelemetryLog.longitude == data.longitude)
+        .order_by(desc(TelemetryLog.timestamp))
+        .limit(1)
+    )
+    result = await db.execute(stmt)
+    prev_log = result.scalar_one_or_none()
+    
+    # If a previous log exists and has FWI data, pass them as previous day's metrics
+    if prev_log and prev_log.ffmc is not None and prev_log.dmc is not None and prev_log.dc is not None:
+        fwi_results = calculate_fwi(temp, rh, ws, rain, prev_ffmc=prev_log.ffmc, prev_dmc=prev_log.dmc, prev_dc=prev_log.dc)
+    else:
+        # Brand new location, use standard spring startup defaults
+        fwi_results = calculate_fwi(temp, rh, ws, rain)
+        
+    ffmc = fwi_results["FFMC"]
+    dmc = fwi_results["DMC"]
+    dc = fwi_results["DC"]
+    isi = fwi_results["ISI"]
+    bui = fwi_results["BUI"]
+    fwi = fwi_results["FWI"]
 
     # Extract raw values into a 2D numpy array in the exact order the model expects
     raw_values = np.array([[
@@ -236,6 +255,12 @@ async def evaluate_risk(data: LocationPayload, db: AsyncSession = Depends(get_db
         humidity=rh,
         wind_speed=ws,
         rain=rain,
+        ffmc=ffmc,
+        dmc=dmc,
+        dc=dc,
+        isi=isi,
+        bui=bui,
+        fwi=fwi,
         risk_probability=final_risk_score,
         evacuation_authorized=bool(needs_evacuation)
     )
