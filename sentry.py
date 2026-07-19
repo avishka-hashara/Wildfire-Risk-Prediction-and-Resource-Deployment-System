@@ -10,10 +10,9 @@ from models import TelemetryLog
 from fwi_calculator import calculate_fwi
 from telegram_alert import send_telegram_alert
 
-# Import the existing ML components initialized in app.py to prevent redundant memory loading
-import app
-
 async def run_sentry_scan():
+    # Import app locally to avoid circular imports during startup
+    import app
     print("Starting Sentry Scan across all historical sectors...")
     
     async with AsyncSessionLocal() as session:
