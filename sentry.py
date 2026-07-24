@@ -17,6 +17,7 @@ async def run_sentry_scan(veg_provider=None):
         veg_provider = MockVegetationProvider()
         
     from vegetation_repository import VegetationRepository
+    from ndvi_service import NdviService
     
     # Import app locally to avoid circular imports during startup
     import app
@@ -37,6 +38,7 @@ async def run_sentry_scan(veg_provider=None):
         batch_fwi_data = []
         
         veg_repo = VegetationRepository(session)
+        ndvi_service = NdviService(veg_provider, veg_repo)
 
         # 4. Loop through each unique coordinate pair
         for lat, lng in unique_coords:
@@ -72,15 +74,8 @@ async def run_sentry_scan(veg_provider=None):
                 
             # Fetch and store NDVI
             try:
-                ndvi_resp = await veg_provider.get_ndvi(lat, lng)
-                location = await veg_repo.get_or_create_location(lat, lng)
-                await veg_repo.add_vegetation_data(
-                    location_id=location.id,
-                    ndvi=ndvi_resp["ndvi"],
-                    source=ndvi_resp["source"],
-                    captured_at=ndvi_resp["captured_at"].replace(tzinfo=None)
-                )
-                print(f"  Stored NDVI: {ndvi_resp['ndvi']} (Source: {ndvi_resp['source']})")
+                ndvi_val = await ndvi_service.fetch_and_store_ndvi(lat, lng)
+                print(f"  Stored NDVI: {ndvi_val}")
             except Exception as e:
                 print(f"  Warning: NDVI fetch or store failed for {lat}, {lng}: {e}")
 
