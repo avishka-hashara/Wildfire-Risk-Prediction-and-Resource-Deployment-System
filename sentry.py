@@ -155,9 +155,29 @@ async def run_sentry_scan():
             # Alert Trigger
             if final_risk_score > 85.0:
                 print(f"  🚨 Threat level breached 85.0%! Dispatching Telegram alert...")
+                
+                # SHAP Explanation
+                driving_factors = "Cumulative Risk Factors"
+                if app.explainer is not None:
+                    try:
+                        sector_tensor = batch_tensors[i].unsqueeze(0).to('cpu')
+                        app.model.to('cpu')
+                        
+                        shap_vals = app.explainer.shap_values(sector_tensor)
+                        vals = np.array(shap_vals).flatten()
+                        if vals.size >= 10:
+                            vals = vals[-10:]
+                            
+                        top_indices = np.argsort(vals)[-2:][::-1]
+                        factors = [app.FEATURE_NAMES[int(idx)] for idx in top_indices if vals[int(idx)] > 0]
+                        if factors:
+                            driving_factors = " and ".join(factors)
+                    except Exception as e:
+                        print(f"  Warning: SHAP explanation failed: {e}")
+
                 route = nx.shortest_path(app.city_map, source='Fire Station Alpha', target='Active Fire Zone', weight='weight')
                 travel_time = nx.shortest_path_length(app.city_map, source='Fire Station Alpha', target='Active Fire Zone', weight='weight')
-                await send_telegram_alert(lat, lng, round(final_risk_score, 2), route=route, travel_time=travel_time)
+                await send_telegram_alert(lat, lng, round(final_risk_score, 2), route=route, travel_time=travel_time, driving_factors=driving_factors)
 
             # Prepare Bulk Insert
             new_log = TelemetryLog(

@@ -8,7 +8,7 @@ load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "")
 CHAT_ID = os.getenv("CHAT_ID", "")
 
-async def send_telegram_alert(latitude, longitude, risk_level, route=None, travel_time=None):
+async def send_telegram_alert(latitude, longitude, risk_level, route=None, travel_time=None, driving_factors=None):
     """
     Sends a critical wildfire threat alert to a specified Telegram chat.
     """
@@ -21,6 +21,9 @@ async def send_telegram_alert(latitude, longitude, risk_level, route=None, trave
         f"Sector: {latitude}, {longitude}\n"
         f"AI Threat Level: {risk_level}%"
     )
+    
+    if driving_factors:
+        message += f"\n⚠️ Threat driven primarily by: {driving_factors}"
     
     if route and travel_time is not None:
         route_str = " ➔ ".join(route)

@@ -18,6 +18,7 @@ import joblib
 import numpy as np
 import skfuzzy as fuzz
 from skfuzzy import control as ctrl
+import shap
 
 # ---------------------------------------------------------
 # 1. API Configuration & CORS
@@ -79,6 +80,20 @@ class TunedWildfirePredictor(nn.Module):
 model = TunedWildfirePredictor(input_size=INPUT_FEATURES, hidden1=32, hidden2=16, dropout_rate=0.0)
 model.load_state_dict(torch.load('wildfire_production_model.pth', map_location=torch.device('cpu'), weights_only=True))
 model.eval()
+
+# ---------------------------------------------------------
+# 2.5 Explainable AI (SHAP) Setup
+# ---------------------------------------------------------
+print("Initializing SHAP Explainer...")
+try:
+    # Standard scaler centers data at 0. Creating a background distribution of 100 zeros.
+    background_data = torch.zeros((100, INPUT_FEATURES), dtype=torch.float32)
+    explainer = shap.DeepExplainer(model, background_data)
+    FEATURE_NAMES = ["Temperature", "RH", "Wind Speed", "Rain", "FFMC", "DMC", "DC", "ISI", "BUI", "FWI"]
+except Exception as e:
+    print(f"Warning: SHAP initialization failed: {e}")
+    explainer = None
+    FEATURE_NAMES = []
 
 # ---------------------------------------------------------
 # 3. Fuzzy Logic Expert System Setup
