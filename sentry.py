@@ -13,8 +13,13 @@ from telegram_alert import send_telegram_alert
 
 async def run_sentry_scan(veg_provider=None):
     if veg_provider is None:
-        from vegetation_provider import MockVegetationProvider
-        veg_provider = MockVegetationProvider()
+        import os
+        if os.getenv("SENTINEL_HUB_CLIENT_ID") and os.getenv("SENTINEL_HUB_CLIENT_SECRET"):
+            from vegetation_provider import SentinelHubVegetationProvider
+            veg_provider = SentinelHubVegetationProvider()
+        else:
+            from vegetation_provider import MockVegetationProvider
+            veg_provider = MockVegetationProvider()
         
     from vegetation_repository import VegetationRepository
     from ndvi_service import NdviService
