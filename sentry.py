@@ -11,7 +11,13 @@ from models import TelemetryLog
 from fwi_calculator import calculate_fwi
 from telegram_alert import send_telegram_alert
 
-async def run_sentry_scan():
+async def run_sentry_scan(veg_provider=None):
+    if veg_provider is None:
+        from vegetation_provider import MockVegetationProvider
+        veg_provider = MockVegetationProvider()
+        
+    from vegetation_repository import VegetationRepository
+    
     # Import app locally to avoid circular imports during startup
     import app
     print("Starting Sentry Scan across all historical sectors...")
@@ -29,6 +35,8 @@ async def run_sentry_scan():
         batch_tensors = []
         batch_coords = []
         batch_fwi_data = []
+        
+        veg_repo = VegetationRepository(session)
 
         # 4. Loop through each unique coordinate pair
         for lat, lng in unique_coords:
@@ -50,16 +58,33 @@ async def run_sentry_scan():
                 print(f"  Warning: Elevation fetch failed for {lat}, {lng}: {e}")
 
             # Fetch live Open-Meteo weather data via httpx
+            weather_data = None
             url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lng}{elevation_param}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,rain"
             try:
                 async with httpx.AsyncClient() as client:
                     resp = await client.get(url, timeout=10.0)
                     if resp.status_code != 200:
                         print(f"  Warning: Weather fetch failed for {lat}, {lng} with status {resp.status_code}")
-                        continue
-                    weather_data = resp.json()
+                    else:
+                        weather_data = resp.json()
             except Exception as e:
                 print(f"  Warning: Weather request error for {lat}, {lng}: {e}")
+                
+            # Fetch and store NDVI
+            try:
+                ndvi_resp = await veg_provider.get_ndvi(lat, lng)
+                location = await veg_repo.get_or_create_location(lat, lng)
+                await veg_repo.add_vegetation_data(
+                    location_id=location.id,
+                    ndvi=ndvi_resp["ndvi"],
+                    source=ndvi_resp["source"],
+                    captured_at=ndvi_resp["captured_at"].replace(tzinfo=None)
+                )
+                print(f"  Stored NDVI: {ndvi_resp['ndvi']} (Source: {ndvi_resp['source']})")
+            except Exception as e:
+                print(f"  Warning: NDVI fetch or store failed for {lat}, {lng}: {e}")
+
+            if not weather_data:
                 continue
                 
             current = weather_data.get("current", {})
