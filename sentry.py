@@ -79,10 +79,10 @@ async def run_sentry_scan(veg_provider=None):
                 
             # Fetch and store NDVI
             try:
-                ndvi_val = await ndvi_service.fetch_and_store_ndvi(lat, lng)
-                print(f"  Stored NDVI: {ndvi_val}")
+                ndvi_val = await ndvi_service.get_ndvi(lat, lng)
+                print(f"  NDVI: {ndvi_val}")
             except Exception as e:
-                print(f"  Warning: NDVI fetch or store failed for {lat}, {lng}: {e}")
+                print(f"  Warning: NDVI fetch failed for {lat}, {lng}: {e}")
 
             if not weather_data:
                 continue
