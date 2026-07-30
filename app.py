@@ -186,7 +186,8 @@ async def evaluate_risk(data: LocationPayload, db: AsyncSession = Depends(get_db
             resp.raise_for_status()
             weather_data = resp.json()
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Failed to fetch environmental data: {str(e)}")
+        print(f"Warning: Open-Meteo API unreachable, using default mock weather data: {str(e)}")
+        weather_data = {}
         
     current = weather_data.get("current", {})
     
