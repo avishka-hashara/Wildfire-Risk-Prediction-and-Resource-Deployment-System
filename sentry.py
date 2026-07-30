@@ -118,13 +118,15 @@ async def run_sentry_scan(veg_provider=None):
             fwi = fwi_results["FWI"]
 
             # Convert to tensor and add to batch
+            safe_ndvi = ndvi_val if ndvi_val is not None else 0.0
             raw_values = np.array([[
                 temp, rh, ws, rain, 
                 ffmc, dmc, dc, isi, 
-                bui, fwi
+                bui, fwi, safe_ndvi
             ]])
             
-            scaled_values = app.scaler.transform(raw_values)
+            # Slice off the new NDVI feature since model isn't retrained yet
+            scaled_values = app.scaler.transform(raw_values[:, :-1])
             input_data = torch.tensor(scaled_values, dtype=torch.float32).squeeze(0)
             
             batch_tensors.append(input_data)
@@ -132,7 +134,7 @@ async def run_sentry_scan(veg_provider=None):
             batch_fwi_data.append({
                 "elevation": elevation_val,
                 "temp": temp, "rh": rh, "ws": ws, "rain": rain,
-                "ffmc": ffmc, "dmc": dmc, "dc": dc, "isi": isi, "bui": bui, "fwi": fwi
+                "ffmc": ffmc, "dmc": dmc, "dc": dc, "isi": isi, "bui": bui, "fwi": fwi, "ndvi": safe_ndvi
             })
 
         if not batch_tensors:

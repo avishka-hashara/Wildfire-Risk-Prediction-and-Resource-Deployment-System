@@ -193,6 +193,28 @@ async def evaluate_risk(data: LocationPayload, db: AsyncSession = Depends(get_db
     ws = current.get("wind_speed_10m", 28.5)
     rain = current.get("rain", 0.0)
     
+    # Fetch NDVI
+    import os
+    from vegetation_provider import SentinelHubVegetationProvider, MockVegetationProvider
+    from vegetation_repository import VegetationRepository
+    from ndvi_service import NdviService
+    
+    if os.getenv("SENTINEL_HUB_CLIENT_ID") and os.getenv("SENTINEL_HUB_CLIENT_SECRET"):
+        veg_provider = SentinelHubVegetationProvider()
+    else:
+        veg_provider = MockVegetationProvider()
+    
+    veg_repo = VegetationRepository(db)
+    ndvi_service = NdviService(veg_provider, veg_repo)
+    
+    try:
+        ndvi_val = await ndvi_service.get_ndvi(data.latitude, data.longitude)
+    except Exception as e:
+        print(f"Warning: NDVI fetch failed: {e}")
+        ndvi_val = None
+        
+    safe_ndvi = ndvi_val if ndvi_val is not None else 0.0
+    
     # Query database for the most recent log at this exact location
     stmt = (
         select(TelemetryLog)
@@ -219,14 +241,16 @@ async def evaluate_risk(data: LocationPayload, db: AsyncSession = Depends(get_db
     fwi = fwi_results["FWI"]
 
     # Extract raw values into a 2D numpy array in the exact order the model expects
+    # Appending NDVI to the feature vector.
     raw_values = np.array([[
         temp, rh, ws, rain, 
         ffmc, dmc, dc, isi, 
-        bui, fwi
+        bui, fwi, safe_ndvi
     ]])
     
     # Transform the raw values using the loaded scikit-learn scaler
-    scaled_values = scaler.transform(raw_values)
+    # Slicing the 11th feature off temporarily since the model isn't retrained yet.
+    scaled_values = scaler.transform(raw_values[:, :-1])
     
     # Convert the scaled values to a PyTorch tensor
     input_data = torch.tensor(scaled_values, dtype=torch.float32)
@@ -258,7 +282,8 @@ async def evaluate_risk(data: LocationPayload, db: AsyncSession = Depends(get_db
             "DC": dc,
             "ISI": isi,
             "BUI": bui,
-            "FWI": fwi
+            "FWI": fwi,
+            "NDVI": safe_ndvi
         },
         "payload_received": data.model_dump()
     }
