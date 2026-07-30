@@ -60,6 +60,7 @@ class MockVegetationProvider(VegetationProvider):
             "ndvi": mock_ndvi,
             "source": "MockSatellite-1A",
             "captured_at": captured_at
+        }
 import os
 import asyncio
 import httpx
