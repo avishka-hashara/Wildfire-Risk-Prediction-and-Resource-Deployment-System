@@ -1,5 +1,9 @@
 # Wildfire Risk Prediction & Resource Deployment System
 
+![Wildfire Dashboard](assets/dashboard_1.png)
+
+![Sector Microclimate History](assets/dashboard_2.png)
+
 An intelligent AI-powered system designed to predict wildfire risks and optimize resource deployment and routing for emergency response teams.
 
 ## Overview
