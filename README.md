@@ -1,8 +1,6 @@
 # Wildfire Risk Prediction & Resource Deployment System
 
-![Wildfire Dashboard](assets/dashboard_1.png)
-
-![Sector Microclimate History](assets/dashboard_2.png)
+![Wildfire AI System Banner](assets/banner.png)
 
 An intelligent AI-powered system designed to predict wildfire risks and optimize resource deployment and routing for emergency response teams.
 
@@ -10,37 +8,45 @@ An intelligent AI-powered system designed to predict wildfire risks and optimize
 
 This project consists of two main components:
 1. **Backend Engine**: A robust FastAPI backend combining Deep Learning (PyTorch), Fuzzy Logic (`skfuzzy`), and Graph Theory (`networkx`).
-2. **Frontend Dashboard**: A responsive modern web dashboard built with React, Vite, and Tailwind CSS.
+2. **Frontend Dashboard**: A responsive modern web dashboard built with React, Vite, Leaflet, and Tailwind CSS.
 
 ### Key Features
 - **Machine Learning Prediction**: Utilizes a trained PyTorch neural network to predict the probability of a wildfire based on meteorological and environmental parameters.
-- **Fuzzy Logic Expert System**: Evaluates the neural network's probability output alongside wind speed to calculate a human-readable, actionable `risk_level` (Safe, Watch, Alert, Evacuate).
-- **Logistics & Routing**: Uses graph algorithms (NetworkX) to determine the fastest deployment route for emergency vehicles from fire stations to the risk zone.
-- **Interactive Dashboard**: Provides a seamless user interface for operators to input environmental data and receive instant risk assessments and routing instructions.
+- **Fuzzy Logic Expert System**: Evaluates the neural network's probability output alongside wind speed to calculate a human-readable, actionable risk level (Safe, Watch, Alert, Evacuate).
+- **Logistics & Routing**: Uses graph algorithms (NetworkX / Dijkstra) to determine the fastest deployment route for emergency vehicles from fire stations to the risk zone.
+- **Interactive Command Center**: Provides a seamless GIS tactical map interface for operators to select coordinates, inspect environmental metrics, and receive instant risk assessments and routing instructions.
 - **Real-Time Alerts**: Automated critical wildfire threat alerts via Telegram, complete with risk levels and evacuation logistics.
 - **Explainable AI (XAI)**: Integrated SHAP values to determine and display the primary driving factors behind high-risk predictions.
 - **Vegetation Indexing (NDVI)**: Fetches and processes satellite vegetation data for accurate environmental modeling.
-- **Telemetry & Logging**: Robust SQLite database logging (SQLAlchemy) of telemetry data and error tracking using Sentry.
+- **Telemetry & Logging**: Database logging (SQLAlchemy) of telemetry data and background scan health monitoring using Sentry.
+
+## User Interface
+
+### Command Center Dashboard
+![Wildfire Dashboard](assets/dashboard_1.png)
+
+### Sector Microclimate History
+![Sector Microclimate History](assets/dashboard_2.png)
 
 ## Project Structure
 
 ```
 Wildfire_AI_Project/
-├── 1_Data_Exploration.ipynb               # Jupyter notebook for initial data analysis and modeling
-├── Algerian_forest_fires_dataset_*.csv    # Datasets used for training the model
-├── app.py                                 # Main FastAPI backend application
-├── models.py & database.py                # SQLAlchemy database models and setup
-├── telegram_alert.py                      # Telegram notification integration
-├── sentry.py                              # Sentry error tracking and telemetry
-├── ndvi_service.py & vegetation_*.py      # NDVI processing and data providers
-├── fwi_calculator.py                      # Fire Weather Index (FWI) calculations
-├── wildfire_production_model.pth          # Pre-trained PyTorch neural network weights
-├── wildfire_scaler.pkl                    # Scikit-learn scaler for data normalization
-├── venv/                                  # Python virtual environment (if created locally)
-└── wildfire-dashboard/                    # Frontend React/Vite application
-    ├── src/                               # React components and styling
-    ├── package.json                       # Node.js dependencies
-    └── ...
+|-- 1_Data_Exploration.ipynb               # Jupyter notebook for initial data analysis and modeling
+|-- Algerian_forest_fires_dataset_*.csv    # Datasets used for training the model
+|-- app.py                                 # Main FastAPI backend application
+|-- models.py & database.py                # SQLAlchemy database models and setup
+|-- telegram_alert.py                      # Telegram notification integration
+|-- sentry.py                              # Sentry error tracking and telemetry
+|-- ndvi_service.py & vegetation_*.py      # NDVI processing and data providers
+|-- fwi_calculator.py                      # Fire Weather Index (FWI) calculations
+|-- wildfire_production_model.pth          # Pre-trained PyTorch neural network weights
+|-- wildfire_scaler.pkl                    # Scikit-learn scaler for data normalization
+|-- venv/                                  # Python virtual environment (if created locally)
+`-- wildfire-dashboard/                    # Frontend React/Vite application
+    |-- src/                               # React components and styling
+    |-- package.json                       # Node.js dependencies
+    `-- ...
 ```
 
 ## Setup Instructions
@@ -98,12 +104,13 @@ npm run dev
 
 ## API Endpoints
 
-- `POST /predict_risk`: Accepts environmental data (Temperature, RH, Ws, Rain, FFMC, DMC, DC, ISI, BUI, FWI), scales it, passes it through the PyTorch model, evaluates risk via Fuzzy Logic, and calculates the optimal route. Returns a comprehensive JSON response with prediction, risk level, and routing information.
+- `POST /api/evaluate-risk`: Accepts geographical coordinates (latitude and longitude), fetches real-time meteorological conditions and elevation, calculates Canadian Forest Fire Weather Index (FWI) components, performs neural network inference, executes fuzzy logic rule evaluation, calculates emergency routing if evacuation is required, and persists telemetry logs.
+- `GET /api/telemetry-history`: Retrieves chronological historical telemetry records and microclimate trend metrics for specified coordinates.
 
 ## Technologies Used
 - **Backend**: Python, FastAPI, Uvicorn, SQLAlchemy, SQLite
 - **AI / ML**: PyTorch, Scikit-learn, Scikit-Fuzzy (Fuzzy Logic Expert System), SHAP (Explainable AI)
 - **Algorithms**: NetworkX (Dijkstra's Algorithm / Graph Routing)
-- **Integrations**: Telegram API (Alerts), Sentry (Telemetry), Open-Meteo (Weather API)
-- **Frontend**: React, Vite, Tailwind CSS, Axios
+- **Integrations**: Telegram API (Alerts), Sentry (Telemetry), Open-Meteo (Weather API), Sentinel-Hub (Satellite NDVI)
+- **Frontend**: React, Vite, Tailwind CSS, Leaflet, Recharts, Axios
 - **Data**: Based on the Algerian Forest Fires Dataset
